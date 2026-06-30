@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: order-svc
-          image: 598096478246.dkr.ecr.ap-south-1.amazonaws.com/order-svc:v1.0
+          image: 598096478246.dkr.ecr.ap-south-1.amazonaws.com/order-svc:7433efefa3f413c1c70ceba42f1d45f494243e4d
           ports:
             - containerPort: 3001
           env:
