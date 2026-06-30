@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+Name: CI/CD Pipeline
 
 on:
   push:
@@ -7,13 +7,17 @@ on:
     branches: [main]
 
 env:
+  # Define region once to maintain consistency
   AWS_REGION: ap-south-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
 
 jobs:
   build-and-deploy:
     name: Build, Scan & Deploy
     runs-on: ubuntu-latest
+    
+    # ERROR FIX: Explicitly grant permissions for the git push step
+    permissions:
+      contents: write 
 
     steps:
       - name: Checkout code
@@ -24,47 +28,52 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }} # ERROR FIX: Matched to env variable
 
       - name: Login to ECR
+        id: login-ecr # ERROR FIX: Added ID to capture the registry output
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build product-svc image
         run: |
           docker build -t product-svc:${{ github.sha }} \
             services/product-svc/
-
+            
       - name: Build order-svc image
         run: |
           docker build -t order-svc:${{ github.sha }} \
             services/order-svc/
-
+            
       - name: Trivy scan product-svc
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0 # ERROR FIX: Pinned version instead of @master
         with:
           image-ref: product-svc:${{ github.sha }}
           format: table
-          exit-code: '0'
+          exit-code: '1' # ERROR FIX: Will now fail the pipeline if vulnerabilities are found
           severity: CRITICAL,HIGH
 
       - name: Trivy scan order-svc
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: order-svc:${{ github.sha }}
           format: table
-          exit-code: '0'
+          exit-code: '1'
           severity: CRITICAL,HIGH
 
       - name: Push images to ECR
         if: github.ref == 'refs/heads/main'
+        env:
+          # ERROR FIX: Use the dynamic output from the ECR login step
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker tag product-svc:${{ github.sha }} \
-            $ECR_REGISTRY/product-svc:${{ github.sha }}
+            $REGISTRY/product-svc:${{ github.sha }}
           docker tag order-svc:${{ github.sha }} \
-            $ECR_REGISTRY/order-svc:${{ github.sha }}
-          docker push $ECR_REGISTRY/product-svc:${{ github.sha }}
-          docker push $ECR_REGISTRY/order-svc:${{ github.sha }}
-
+            $REGISTRY/order-svc:${{ github.sha }}
+            
+          docker push $REGISTRY/product-svc:${{ github.sha }}
+          docker push $REGISTRY/order-svc:${{ github.sha }}
+          
       - name: Update k8s manifests with new image tag
         if: github.ref == 'refs/heads/main'
         run: |
@@ -72,13 +81,14 @@ jobs:
             k8s/product-svc.yaml
           sed -i "s|order-svc:.*|order-svc:${{ github.sha }}|" \
             k8s/order-svc.yaml
-
+            
       - name: Commit updated manifests
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.email "ci@github.com"
           git config user.name "GitHub Actions"
           git add k8s/
+          # ERROR FIX: Added [skip ci] to strictly prevent recursive workflow triggers
           git diff --staged --quiet || \
-            git commit -m "ci: update image tags to ${{ github.sha }}"
+            git commit -m "ci: update image tags to ${{ github.sha }} [skip ci]"
           git push
