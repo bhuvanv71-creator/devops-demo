@@ -45,7 +45,7 @@ jobs:
             services/order-svc/
             
       - name: Trivy scan product-svc
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: product-svc:${{ github.sha }}
           format: table
@@ -53,7 +53,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Trivy scan order-svc
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: order-svc:${{ github.sha }}
           format: table
